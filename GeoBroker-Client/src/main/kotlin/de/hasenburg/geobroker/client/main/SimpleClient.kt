@@ -9,8 +9,6 @@ import de.hasenburg.geobroker.commons.model.spatial.Location
 import de.hasenburg.geobroker.commons.sleepNoLog
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeoutOrNull
-import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.JsonConfiguration
 import org.apache.logging.log4j.LogManager
 import kotlin.system.exitProcess
 
@@ -23,7 +21,7 @@ private val logger = LogManager.getLogger()
  * It is possible to supply a [socketHWM], for more information on HWM, check out the ZeroMQ documentation.
  * If no HWM is supplied, 1000 is used.
  */
-class SimpleClient(ip: String, port: Int, socketHWM: Int = 1000, val identity: String = "SimpleClient-" + System.nanoTime()) {
+class SimpleClient1(ip: String, port: Int, socketHWM: Int = 1000, val identity: String = "SimpleClient1-" + System.nanoTime()) {
 
     private val spDealer = SPDealer(ip, port, socketHWM)
 
@@ -70,29 +68,41 @@ class SimpleClient(ip: String, port: Int, socketHWM: Int = 1000, val identity: S
 
 fun main() {
     val processManager = ZMQProcessManager()
-    val client = SimpleClient("localhost", 5559)
-
+    val client = SimpleClient1("localhost", 5559, 1000, "one")
+    //val client2 = SimpleClient("localhost", 5559,1000,"two")
     // connect
-    client.send(CONNECTPayload(Location.random()))
-
-    // receive one message
+    var loc = Location.random();
+    client.send(CONNECTPayload(loc))
     logger.info("Received server answer: {}", client.receive())
+    // client2.send(CONNECTPayload(loc))
+    //logger.info("Received server answer: {}", client2.receive())
+
+    // client2.send(CONNECTPayload(loc))
+    // receive one message
+
 
     // subscribe
-    client.send(SUBSCRIBEPayload(Topic("test"), Geofence.circle(Location.random(), 2.0)))
+
+    client.send(SUBSCRIBEPayload(Topic("test"), Geofence.circle(loc, 2.0)))
+    //client2.send(SUBSCRIBEPayload(Topic("test2"), Geofence.circle(loc, 2.0)))
+
 
     // receive one message
     logger.info("Received server answer: {}", client.receive())
+    //logger.info("Received server answer: {}", client2.receive())
 
+
+    client.send(PUBLISHPayload(Topic("test"), Geofence.circle(loc, 2.0), "hello"))
+    logger.info("Received: {}", client.receive())
     // wait 5 seconds
-    sleepNoLog(5000, 0)
+    sleepNoLog(500000000, 0)
 
     // disconnect
     client.send(DISCONNECTPayload(ReasonCode.NormalDisconnection))
 
     client.tearDownClient()
     if (processManager.tearDown(3000)) {
-        logger.info("SimpleClient shut down properly.")
+        logger.info("SimpleClient1 shut down properly.")
     } else {
         logger.fatal("ProcessManager reported that processes are still running: {}",
                 processManager.incompleteZMQProcesses)
