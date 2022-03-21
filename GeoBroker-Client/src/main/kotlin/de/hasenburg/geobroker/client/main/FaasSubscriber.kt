@@ -6,6 +6,8 @@ import de.hasenburg.geobroker.commons.model.message.*
 import de.hasenburg.geobroker.commons.model.message.Payload.*
 import de.hasenburg.geobroker.commons.model.spatial.Geofence
 import de.hasenburg.geobroker.commons.model.spatial.Location
+import de.hasenburg.geobroker.commons.randomInt
+import de.hasenburg.geobroker.commons.sleep
 import de.hasenburg.geobroker.commons.sleepNoLog
 import io.ktor.client.*
 
@@ -27,8 +29,8 @@ private val logger = LogManager.getLogger()
 @Serializable
 data class Function(val name: String, val hash: String, val threads: Int, val resource: String)
 
-class SimpleClient2(ip: String, port: Int, val faasServerAddr: String = "",  val faasFuncPort: Int = 80, val faasMgmtPort: Int = 0, socketHWM: Int = 1000,
-                    val identity: String = "SimpleClient2-" + System.nanoTime(), var location: Location) {
+class FaasSubscriber(ip: String, port: Int, val faasServerAddr: String = "",  val faasFuncPort: Int = 80, val faasMgmtPort: Int = 0, socketHWM: Int = 0,
+                    val identity: String, var location: Location, var subRadiusDeg: Double) {
 
     private val spDealer = SPDealer(ip, port, socketHWM)
     private val faasServer = HttpClient()
@@ -44,6 +46,7 @@ class SimpleClient2(ip: String, port: Int, val faasServerAddr: String = "",  val
         val zMsg = payload.toZMsg(clientIdentifier = identity)
         return spDealer.toSent.offer(zMsg)
     }
+
     fun receive(): Payload {
         return runBlocking {
             val zMsgTP = spDealer.wasReceived.receive()
@@ -58,31 +61,31 @@ class SimpleClient2(ip: String, port: Int, val faasServerAddr: String = "",  val
             }
         }
     }
-    suspend fun subscribeFuncTopics(httpClient: HttpClient){
+    suspend fun susbcribeOneFuncTopic(funcName: String, radius: Double){
+        send(SUBSCRIBEPayload(Topic(funcName), Geofence.circle(location, radius)))
+        logger.info("Subscriber $identity: {}", receive())
+    }
+    suspend fun subscribeAllFuncTopics(){
 
-        var functionsReq: HttpResponse = httpClient.get("$faasServerAddr:$faasMgmtPort/list")
+        var functionsReq: HttpResponse = faasServer.get("$faasServerAddr:$faasMgmtPort/list")
         var functionsRaw: String = functionsReq.receive()
         val functionObj: List<Function> = Json.decodeFromString<List<Function>>(functionsRaw)
 
         for (func in functionObj){
-            send(SUBSCRIBEPayload(Topic(func.name), Geofence.circle(location, 3.0)))
-            logger.info("Received server answer: {}", receive())
+            send(SUBSCRIBEPayload(Topic(func.name), Geofence.circle(location, subRadiusDeg)))
+            logger.info("Subscriber $identity: {}", receive())
         }
     }
    suspend fun connect(){
-       runBlocking {
            send(CONNECTPayload(location))
            logger.info("Received server answer: {}", receive())
-           subscribeFuncTopics(faasServer)
-       }
-
     }
     suspend fun disconnect(){
         send(DISCONNECTPayload(ReasonCode.NormalDisconnection))
 
         tearDownClient()
         if (processManager.tearDown(3000)) {
-            logger.info("SimpleClient2 shut down properly.")
+            logger.info("FaasSubscriber shut down properly.")
         } else {
             logger.fatal("ProcessManager reported that processes are still running: {}",
                     processManager.incompleteZMQProcesses)
@@ -90,37 +93,44 @@ class SimpleClient2(ip: String, port: Int, val faasServerAddr: String = "",  val
         exitProcess(0)
     }
 
-suspend fun run(){
 
-        connect()
-        while (true){
+    suspend fun run(){
+        while(true){
+
             var msg = "";
-            msg = receiveWithTimeout(1000).toString()
+            msg = receiveWithTimeout(200).toString()
+
             if ("null"!= msg){
-                logger.info("Payload: {}", msg)
+
                 if(!msg.contains("PUBACKPayload")){
-                    var topic:String
-                    var target:String
-                    var args:String
+
+                    var topic:String = ""
+                    var target:String = ""
+                    var args:String = ""
                     try{
                         topic = msg.split("(topic=Topic(topic=","),")[1]
                         target = msg.split("<client>","</client>")[1]
                         args = msg.split("<args>","</args>")[1]
                     }catch (e:Exception){
                         logger.error(e)
-                        break
+
                     }
                     if (args.contentEquals("")){
-                        var  httpResponse : HttpResponse = faasServer.get("$faasServerAddr/$topic")
-                        var response: String = httpResponse.receive()
+
+                            var  httpResponse : HttpResponse = faasServer.get("$faasServerAddr/$topic")
+                            var response: String = httpResponse.receive()
+                            send(PUBLISHPayload(Topic(topic + "Res"), Geofence.circle(location, subRadiusDeg),
+                                    "<client>$target</client><res>$response</res>"))
+
+
                         // logger.info("Payload: {}", response)
-                        send(PUBLISHPayload(Topic(topic + "Res"), Geofence.circle(location, 3.0),
-                                "<client>$target</client><res>$response</res>"))
+
                     }}
             }
-        }
+       sleep(200,0) }
     }
-}
+    }
+
 
  fun main() {
 

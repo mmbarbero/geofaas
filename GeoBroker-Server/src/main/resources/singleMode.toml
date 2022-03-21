@@ -1,0 +1,12 @@
+# server information
+[server]
+brokerId = "broker"
+port = 5559
+granularity = 5
+messageProcessors = 1
+
+    [server.mode]
+    name = "single"
+
+
+

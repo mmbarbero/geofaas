@@ -25,7 +25,7 @@ import org.junit.Test
 
 private var logger = LogManager.getLogger()
 
-class DisGBScenarioRuns {
+class DisGBScenarioRuns2 {
 
     // areas must be compatible to disgb_scenario.json
     private val parisArea = Geofence.circle(Location(48.86, 2.35), 3.0)

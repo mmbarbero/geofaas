@@ -108,7 +108,7 @@ public class ZMQProcessManager {
 		process.init(context);
 		Future<?> future = pool.submit(process);
 		zmqProcesses.put(identity, future);
-		logger.info("Started {} with identity {}", process.getClass().getSimpleName(), identity);
+		//logger.info("Started {} with identity {}", process.getClass().getSimpleName(), identity);
 
 	}
 

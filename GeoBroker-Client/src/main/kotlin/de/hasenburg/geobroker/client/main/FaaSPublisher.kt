@@ -15,17 +15,19 @@ import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonConfiguration
 import org.apache.logging.log4j.LogManager
+import kotlin.random.Random
 import kotlin.system.exitProcess
 
 private val logger = LogManager.getLogger()
 
-class SimpleClient1(ip: String, port: Int, socketHWM: Int = 1000,
-                    var location : Location = Location(0.0,0.0)) {
+class FaasPublisher(ip: String, port: Int, socketHWM: Int = 1000,
+                    var location : Location = Location(0.0,0.0)){
 
-    private val spDealer = SPDealer(ip, port, socketHWM)
+    private var spDealer = SPDealer(ip, port, socketHWM)
     val clientId = "client"+ randomInt(99)
-
+    val radius = 0.01
     var args: String =""
+
     fun tearDownClient() {
         if (spDealer.isActive) {
             spDealer.shutdown()
@@ -34,6 +36,12 @@ class SimpleClient1(ip: String, port: Int, socketHWM: Int = 1000,
     fun send(payload: Payload): Boolean {
         val zMsg = payload.toZMsg(clientIdentifier = clientId)
         return spDealer.toSent.offer(zMsg)
+    }
+    suspend fun changeBroker(newPort: Int,newLocation: Location, function: String){
+        send(DISCONNECTPayload(ReasonCode.NormalDisconnection))
+        tearDownClient()
+        spDealer = SPDealer("localhost",newPort,1000)
+        initializeConnection(newLocation,function)
     }
     fun receive(): Payload {
         return runBlocking {
@@ -53,32 +61,40 @@ class SimpleClient1(ip: String, port: Int, socketHWM: Int = 1000,
         send(CONNECTPayload(location))
         logger.info("$clientId connected: {}", receive())
 
-        send(SUBSCRIBEPayload(Topic(function +"Res"), Geofence.circle(location, 2.0)))
+        send(SUBSCRIBEPayload(Topic(function +"Res"), Geofence.circle(location, radius)))
         logger.info("$clientId subscribed to $function: {}", receive())
-
     }
 
-     fun run(function: String){
-         initializeConnection(location,
-                     function)
+  suspend fun run(function: String){
+
+         initializeConnection(location, function)
              val msgContent = "<client>$clientId</client><args>$args</args>"
              while (true){
-                 send(PUBLISHPayload(Topic(function), Geofence.circle(location, 3.0), msgContent))
+                 val start = System.currentTimeMillis()
+                 send(PUBLISHPayload(Topic(function), Geofence.circle(location, radius), msgContent))
                  logger.info("$clientId sent trigger.")
-                 var msg = receiveWithTimeout(1000).toString()
+                 var msg = receiveWithTimeout(200).toString()
+                 logger.info("yoo " +msg)
                  if(msg.contains("PUBACKPayload(reasonCode=Success)")){
                      var matched = false
+
                      while (!matched){
-                         msg = receiveWithTimeout(1000).toString()
+                         msg = receiveWithTimeout(200).toString()
                          if("null" != msg){
                              if(msg.split("<client>","</client>")[1] == clientId){
                                  matched = true
-                                 logger.info("Response: $clientId"+msg.split("<res>","</res>")[1])
+                                 val res = msg.split("<res>","</res>")[1]
+                                 val end = System.currentTimeMillis()
+                                 val elapsed = end -start
+                                 logger.info("Response: $clientId received response: $res" )
+                                 logger.info("$clientId took $elapsed ms to get response from $function")
+                             }else{
+                                 logger.info("Wrong client" )
                              }
                          }
                      }
                  }
-                 sleepNoLog(10000,0)
+                 sleepNoLog(Random.nextLong(5000,10000),0)
              }
          }
         }

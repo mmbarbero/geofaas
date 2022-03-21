@@ -1,0 +1,12 @@
+# server information
+[server]
+brokerId = "Area1"
+port = 5558
+granularity = 5
+messageProcessors = 2
+
+    [server.mode]
+    name = "disgb_publisherMatching"
+    brokerAreaFilePath = "/home/mbar/Desktop/geobroker/GeoBroker-Server/src/main/resources/broker_areas.json"
+    brokerCommunicators = 2
+
